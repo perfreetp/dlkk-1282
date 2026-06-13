@@ -7,7 +7,7 @@ interface TaskState {
   tasks: Task[];
   currentTask: Task | null;
   isLoading: boolean;
-  addTask: (type: TaskType, input: string, category?: string) => void;
+  addTask: (type: TaskType, input: string, outputs: Output[], category?: string) => string;
   updateTask: (id: string, updates: Partial<Task>) => void;
   deleteTask: (id: string) => void;
   setCurrentTask: (task: Task | null) => void;
@@ -23,15 +23,15 @@ export const useTaskStore = create<TaskState>((set, get) => ({
   currentTask: null,
   isLoading: false,
 
-  addTask: (type, input, category) => {
+  addTask: (type, input, outputs, category) => {
     const newTask: Task = {
       id: generateId(),
       type,
       input,
       category,
-      outputs: [],
-      selectedIndex: -1,
-      status: 'pending',
+      outputs,
+      selectedIndex: outputs.length > 0 ? 0 : -1,
+      status: outputs.length > 0 ? 'completed' : 'pending',
       createdAt: new Date(),
       updatedAt: new Date(),
     };
@@ -41,6 +41,8 @@ export const useTaskStore = create<TaskState>((set, get) => ({
       storageService.saveTasks(tasks);
       return { tasks, currentTask: newTask };
     });
+
+    return newTask.id;
   },
 
   updateTask: (id, updates) => {

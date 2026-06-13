@@ -37,7 +37,7 @@ export const Sms: React.FC = () => {
   const [hasGenerated, setHasGenerated] = useState(false);
   const [copied, setCopied] = useState(false);
 
-  const { addTask, setTaskOutputs, tasks } = useTaskStore();
+  const { addTask } = useTaskStore();
   const { recordUsage } = useStatsStore();
 
   const handleGenerate = async () => {
@@ -60,18 +60,14 @@ export const Sms: React.FC = () => {
       const smsResults = await generateSms(params);
       setResults(smsResults);
 
-      addTask('sms', `${activityType} - ${discount}`);
-      const latestTask = tasks[0];
-      if (latestTask) {
-        const taskOutputs = smsResults.map((r, index) => ({
-          content: r.content,
-          version: r.length === 'short' ? '短版' : r.length === 'medium' ? '中版' : '长版',
-          sensitiveWords: [],
-          isMarked: false,
-          markStatus: 'pending' as const,
-        }));
-        setTaskOutputs(latestTask.id, taskOutputs);
-      }
+      const taskOutputs = smsResults.map((r, index) => ({
+        content: r.content,
+        version: r.length === 'short' ? '短版' : r.length === 'medium' ? '中版' : '长版',
+        sensitiveWords: [],
+        isMarked: false,
+        markStatus: 'pending' as const,
+      }));
+      addTask('sms', `${activityType} - ${discount}`, taskOutputs);
 
       recordUsage('sms', true);
     } catch (error) {

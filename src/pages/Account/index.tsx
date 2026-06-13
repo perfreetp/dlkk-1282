@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import {
   Settings,
@@ -11,14 +11,18 @@ import {
   Plus,
   Trash2,
   Edit2,
+  X,
+  Save,
+  ArrowRightLeft,
 } from 'lucide-react';
 import { Card, CardBody } from '../../components/common/Card';
 import { Button } from '../../components/common/Button';
-import { Input } from '../../components/common/Input';
+import { Input, Textarea } from '../../components/common/Input';
 import { Tag } from '../../components/common/Tag';
 import { useUserStore } from '../../stores/userStore';
 import { useStatsStore } from '../../stores/statsStore';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import { ToneStyle } from '../../types';
 
 const menuItems = [
   { path: '/account', icon: User, label: '个人设置', description: '修改个人信息' },
@@ -28,10 +32,30 @@ const menuItems = [
   { path: '/account/team', icon: Users, label: '团队管理', description: '管理团队成员' },
 ];
 
+const toneStyles: { value: ToneStyle; label: string; description: string }[] = [
+  { value: 'professional', label: '专业严谨', description: '正式、专业的表达' },
+  { value: 'friendly', label: '亲切温暖', description: '友好、亲切的语气' },
+  { value: 'humorous', label: '幽默风趣', description: '轻松、幽默的风格' },
+  { value: 'formal', label: '严肃正式', description: '商务、正式的表达' },
+];
+
+const mockTeamMembers = [
+  { id: '1', name: '张小明', email: 'zhang@example.com', role: 'member', usageCount: 45, tasks: { title: 15, selling_point: 10, sms: 8, review_reply: 7, competitor_analysis: 5 } },
+  { id: '2', name: '李小红', email: 'li@example.com', role: 'member', usageCount: 38, tasks: { title: 12, selling_point: 8, sms: 10, review_reply: 5, competitor_analysis: 3 } },
+  { id: '3', name: '王小华', email: 'wang@example.com', role: 'member', usageCount: 62, tasks: { title: 20, selling_point: 15, sms: 12, review_reply: 10, competitor_analysis: 5 } },
+];
+
 export const Account: React.FC = () => {
   const location = useLocation();
-  const { user, brandTones, templates, loadUserData, initializeUser } = useUserStore();
+  const { user, brandTones, templates, addBrandTone, deleteBrandTone, setUser, loadUserData, initializeUser } = useUserStore();
   const { totalCount, successCount, weeklyStats, loadWeeklyStats, topFunctions } = useStatsStore();
+
+  const [showAddBrandModal, setShowAddBrandModal] = useState(false);
+  const [newBrandName, setNewBrandName] = useState('');
+  const [newBrandDescription, setNewBrandDescription] = useState('');
+  const [newBrandStyle, setNewBrandStyle] = useState<ToneStyle>('professional');
+  const [newBrandForbiddenWords, setNewBrandForbiddenWords] = useState('');
+  const [newBrandCommonPhrases, setNewBrandCommonPhrases] = useState('');
 
   useEffect(() => {
     initializeUser();
@@ -48,6 +72,34 @@ export const Account: React.FC = () => {
   }));
 
   const activeTab = location.pathname;
+
+  const handleAddBrandTone = () => {
+    if (!newBrandName.trim()) return;
+
+    addBrandTone({
+      name: newBrandName,
+      description: newBrandDescription,
+      style: newBrandStyle,
+      forbiddenWords: newBrandForbiddenWords.split(/[,，\n]/).filter(Boolean),
+      commonPhrases: newBrandCommonPhrases.split(/[,，\n]/).filter(Boolean),
+      isTeamShared: false,
+    });
+
+    setNewBrandName('');
+    setNewBrandDescription('');
+    setNewBrandStyle('professional');
+    setNewBrandForbiddenWords('');
+    setNewBrandCommonPhrases('');
+    setShowAddBrandModal(false);
+  };
+
+  const handleToggleRole = () => {
+    if (user) {
+      const newRole: 'member' | 'supervisor' = user.role === 'member' ? 'supervisor' : 'member';
+      const updatedUser = { ...user, role: newRole };
+      setUser(updatedUser);
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -118,11 +170,21 @@ export const Account: React.FC = () => {
                       defaultValue={user?.email || ''}
                     />
 
-                    <Input
-                      label="角色"
-                      value={user?.role === 'supervisor' ? '运营主管' : '运营专员'}
-                      disabled
-                    />
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">角色</label>
+                      <div className="flex items-center justify-between p-4 bg-gray-50 rounded-xl">
+                        <span className="font-medium">
+                          {user?.role === 'supervisor' ? '运营主管' : '运营专员'}
+                        </span>
+                        <button
+                          onClick={handleToggleRole}
+                          className="flex items-center gap-2 px-4 py-2 bg-primary-100 text-primary-700 rounded-lg hover:bg-primary-200 transition-colors"
+                        >
+                          <ArrowRightLeft className="w-5 h-5" />
+                          切换角色
+                        </button>
+                      </div>
+                    </div>
 
                     <div className="flex gap-3 pt-4">
                       <Button>保存修改</Button>
@@ -159,67 +221,69 @@ export const Account: React.FC = () => {
           )}
 
           {activeTab === '/account/brand' && (
-            <Card>
-              <CardBody className="p-6">
-                <div className="flex items-center justify-between mb-6">
-                  <h2 className="text-xl font-bold text-gray-900">品牌语气库</h2>
-                  <Button leftIcon={<Plus className="w-4 h-4" />}>
-                    添加规则
-                  </Button>
-                </div>
+            <>
+              <Card>
+                <CardBody className="p-6">
+                  <div className="flex items-center justify-between mb-6">
+                    <h2 className="text-xl font-bold text-gray-900">品牌语气库</h2>
+                    <Button leftIcon={<Plus className="w-4 h-4" />} onClick={() => setShowAddBrandModal(true)}>
+                      添加规则
+                    </Button>
+                  </div>
 
-                {brandTones.length > 0 ? (
-                  <div className="space-y-4">
-                    {brandTones.map((tone) => (
-                      <div
-                        key={tone.id}
-                        className="p-4 bg-gray-50 rounded-xl flex items-start justify-between"
-                      >
-                        <div className="flex-1">
-                          <div className="flex items-center gap-2 mb-2">
-                            <h3 className="font-semibold text-gray-900">
-                              {tone.name}
-                            </h3>
-                            <Tag variant="primary">{tone.style}</Tag>
+                  {brandTones.length > 0 ? (
+                    <div className="space-y-4">
+                      {brandTones.map((tone) => (
+                        <div
+                          key={tone.id}
+                          className="p-4 bg-gray-50 rounded-xl flex items-start justify-between"
+                        >
+                          <div className="flex-1">
+                            <div className="flex items-center gap-2 mb-2">
+                              <h3 className="font-semibold text-gray-900">
+                                {tone.name}
+                              </h3>
+                              <Tag variant="primary">{tone.style}</Tag>
+                            </div>
+                            <p className="text-sm text-gray-600 mb-2">
+                              {tone.description}
+                            </p>
+                            <div className="flex gap-2">
+                              {tone.forbiddenWords.slice(0, 3).map((word, idx) => (
+                                <Tag key={idx} variant="danger" size="sm">
+                                  {word}
+                                </Tag>
+                              ))}
+                              {tone.forbiddenWords.length > 3 && (
+                                <Tag variant="default" size="sm">
+                                  +{tone.forbiddenWords.length - 3}
+                                </Tag>
+                              )}
+                            </div>
                           </div>
-                          <p className="text-sm text-gray-600 mb-2">
-                            {tone.description}
-                          </p>
-                          <div className="flex gap-2">
-                            {tone.forbiddenWords.slice(0, 3).map((word, idx) => (
-                              <Tag key={idx} variant="danger" size="sm">
-                                {word}
-                              </Tag>
-                            ))}
-                            {tone.forbiddenWords.length > 3 && (
-                              <Tag variant="default" size="sm">
-                                +{tone.forbiddenWords.length - 3}
-                              </Tag>
-                            )}
+                          <div className="flex gap-2 ml-4">
+                            <Button variant="ghost" size="sm">
+                              <Edit2 className="w-4 h-4" />
+                            </Button>
+                            <Button variant="ghost" size="sm" onClick={() => deleteBrandTone(tone.id)}>
+                              <Trash2 className="w-4 h-4 text-gray-400" />
+                            </Button>
                           </div>
                         </div>
-                        <div className="flex gap-2 ml-4">
-                          <Button variant="ghost" size="sm">
-                            <Edit2 className="w-4 h-4" />
-                          </Button>
-                          <Button variant="ghost" size="sm">
-                            <Trash2 className="w-4 h-4 text-gray-400" />
-                          </Button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="text-center py-12">
-                    <Palette className="w-12 h-12 text-gray-300 mx-auto mb-4" />
-                    <p className="text-gray-500">暂无品牌语气规则</p>
-                    <p className="text-sm text-gray-400 mt-1">
-                      创建品牌语气规则，让 AI 生成更符合品牌调性的内容
-                    </p>
-                  </div>
-                )}
-              </CardBody>
-            </Card>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="text-center py-12">
+                      <Palette className="w-12 h-12 text-gray-300 mx-auto mb-4" />
+                      <p className="text-gray-500">暂无品牌语气规则</p>
+                      <p className="text-sm text-gray-400 mt-1">
+                        创建品牌语气规则，让 AI 生成更符合品牌调性的内容
+                      </p>
+                    </div>
+                  )}
+                </CardBody>
+              </Card>
+            </>
           )}
 
           {activeTab === '/account/templates' && (
@@ -372,7 +436,7 @@ export const Account: React.FC = () => {
                     <h2 className="text-xl font-bold text-gray-900">团队管理</h2>
                     <p className="text-sm text-gray-600 mt-1">
                       {user?.role === 'supervisor'
-                        ? '作为主管，你可以管理团队成员'
+                        ? '作为主管，你可以管理团队成员和查看使用数据'
                         : '联系主管添加你到团队'}
                     </p>
                   </div>
@@ -384,7 +448,7 @@ export const Account: React.FC = () => {
                 </div>
 
                 {user?.role === 'supervisor' ? (
-                  <div className="space-y-3">
+                  <div className="space-y-6">
                     <div className="p-4 bg-gray-50 rounded-xl flex items-center justify-between">
                       <div className="flex items-center gap-3">
                         <div className="w-10 h-10 bg-primary-100 rounded-full flex items-center justify-center font-bold text-primary-600">
@@ -397,6 +461,52 @@ export const Account: React.FC = () => {
                       </div>
                       <Tag variant="primary">主管</Tag>
                     </div>
+
+                    <h3 className="text-lg font-semibold text-gray-900">团队成员</h3>
+                    <div className="space-y-4">
+                      {mockTeamMembers.map((member) => (
+                        <div
+                          key={member.id}
+                          className="p-4 bg-gray-50 rounded-xl"
+                        >
+                          <div className="flex items-center gap-4 mb-4">
+                            <div className="w-12 h-12 bg-gray-200 rounded-full flex items-center justify-center font-bold text-gray-600">
+                              {member.name.charAt(0)}
+                            </div>
+                            <div className="flex-1">
+                              <p className="font-semibold text-gray-900">{member.name}</p>
+                              <p className="text-sm text-gray-500">{member.email}</p>
+                            </div>
+                            <div className="text-right">
+                              <p className="text-2xl font-bold text-primary-600">{member.usageCount}</p>
+                              <p className="text-xs text-gray-500">总使用次数</p>
+                            </div>
+                          </div>
+                          <div className="grid grid-cols-5 gap-2">
+                            <div className="text-center p-2 bg-white rounded-lg">
+                              <p className="text-lg font-bold text-blue-600">{member.tasks.title}</p>
+                              <p className="text-xs text-gray-500">标题生成</p>
+                            </div>
+                            <div className="text-center p-2 bg-white rounded-lg">
+                              <p className="text-lg font-bold text-green-600">{member.tasks.selling_point}</p>
+                              <p className="text-xs text-gray-500">卖点改写</p>
+                            </div>
+                            <div className="text-center p-2 bg-white rounded-lg">
+                              <p className="text-lg font-bold text-orange-600">{member.tasks.sms}</p>
+                              <p className="text-xs text-gray-500">活动短信</p>
+                            </div>
+                            <div className="text-center p-2 bg-white rounded-lg">
+                              <p className="text-lg font-bold text-purple-600">{member.tasks.review_reply}</p>
+                              <p className="text-xs text-gray-500">差评回复</p>
+                            </div>
+                            <div className="text-center p-2 bg-white rounded-lg">
+                              <p className="text-lg font-bold text-pink-600">{member.tasks.competitor_analysis}</p>
+                              <p className="text-xs text-gray-500">竞品分析</p>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 ) : (
                   <div className="text-center py-12">
@@ -405,6 +515,13 @@ export const Account: React.FC = () => {
                     <p className="text-sm text-gray-400 mt-1">
                       请联系你的主管获取团队邀请
                     </p>
+                    <Button
+                      variant="secondary"
+                      className="mt-4"
+                      onClick={handleToggleRole}
+                    >
+                      切换为主管身份
+                    </Button>
                   </div>
                 )}
               </CardBody>
@@ -412,6 +529,83 @@ export const Account: React.FC = () => {
           )}
         </div>
       </div>
+
+      {showAddBrandModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <Card className="w-full max-w-lg mx-4">
+            <CardBody className="p-6">
+              <div className="flex items-center justify-between mb-6">
+                <h3 className="text-xl font-bold text-gray-900">添加品牌语气规则</h3>
+                <Button variant="ghost" size="sm" onClick={() => setShowAddBrandModal(false)}>
+                  <X className="w-5 h-5" />
+                </Button>
+              </div>
+
+              <div className="space-y-4">
+                <Input
+                  label="规则名称"
+                  placeholder="输入规则名称"
+                  value={newBrandName}
+                  onChange={(e) => setNewBrandName(e.target.value)}
+                />
+
+                <Textarea
+                  label="描述"
+                  placeholder="简要描述这个语气规则的特点"
+                  value={newBrandDescription}
+                  onChange={(e) => setNewBrandDescription(e.target.value)}
+                  rows={2}
+                />
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">语气风格</label>
+                  <div className="grid grid-cols-2 gap-2">
+                    {toneStyles.map((style) => (
+                      <button
+                        key={style.value}
+                        onClick={() => setNewBrandStyle(style.value)}
+                        className={`p-3 rounded-xl border-2 text-left transition-all ${
+                          newBrandStyle === style.value
+                            ? 'border-primary-500 bg-primary-50'
+                            : 'border-gray-200 hover:border-primary-300'
+                        }`}
+                      >
+                        <div className="font-medium text-gray-900">{style.label}</div>
+                        <div className="text-xs text-gray-500">{style.description}</div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <Textarea
+                  label="违禁词（每行一个）"
+                  placeholder="输入违禁词，用逗号或换行分隔"
+                  value={newBrandForbiddenWords}
+                  onChange={(e) => setNewBrandForbiddenWords(e.target.value)}
+                  rows={3}
+                />
+
+                <Textarea
+                  label="常用短语（每行一个）"
+                  placeholder="输入常用短语，用逗号或换行分隔"
+                  value={newBrandCommonPhrases}
+                  onChange={(e) => setNewBrandCommonPhrases(e.target.value)}
+                  rows={3}
+                />
+              </div>
+
+              <div className="flex gap-3 mt-6">
+                <Button variant="ghost" onClick={() => setShowAddBrandModal(false)}>
+                  取消
+                </Button>
+                <Button onClick={handleAddBrandTone} leftIcon={<Save className="w-4 h-4" />}>
+                  保存规则
+                </Button>
+              </div>
+            </CardBody>
+          </Card>
+        </div>
+      )}
     </div>
   );
 };

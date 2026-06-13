@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
-import { Sparkles, AlertTriangle, Check, Star, Copy } from 'lucide-react';
-import { Card, CardBody, CardHeader, CardFooter } from '../../components/common/Card';
+import React, { useState } from 'react';
+import { Sparkles, AlertTriangle, Check, Star, Copy, ThumbsUp, ThumbsDown } from 'lucide-react';
+import { Card, CardBody } from '../../components/common/Card';
 import { Button } from '../../components/common/Button';
 import { Input, Textarea } from '../../components/common/Input';
 import { Tag } from '../../components/common/Tag';
@@ -10,8 +10,8 @@ import { useTaskStore } from '../../stores/taskStore';
 import { useStatsStore } from '../../stores/statsStore';
 import { useUserStore } from '../../stores/userStore';
 import { generateTitles, rewriteSellingPoints } from '../../services/aiService';
-import { validateSensitive, getRiskLevel, suggestFixes } from '../../services/sensitiveService';
-import { SensitiveCheckResult } from '../../types';
+import { validateSensitive, suggestFixes } from '../../services/sensitiveService';
+import { SensitiveCheckResult, Output } from '../../types';
 
 const categories = [
   '服装', '数码', '美妆', '食品', '家居',
@@ -23,13 +23,14 @@ export const Product: React.FC = () => {
   const [keywords, setKeywords] = useState('');
   const [category, setCategory] = useState('服装');
   const [sellingPoint, setSellingPoint] = useState('');
-  const [outputs, setOutputs] = useState<string[]>([]);
+  const [outputs, setOutputs] = useState<Output[]>([]);
   const [selectedIndex, setSelectedIndex] = useState<number>(-1);
   const [sensitiveResult, setSensitiveResult] = useState<SensitiveCheckResult | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [hasGenerated, setHasGenerated] = useState(false);
+  const [currentTaskId, setCurrentTaskId] = useState<string | null>(null);
 
-  const { addTask, setTaskOutputs, tasks } = useTaskStore();
+  const { addTask, markOutput } = useTaskStore();
   const { recordUsage } = useStatsStore();
   const { addTemplate } = useUserStore();
 
@@ -43,20 +44,18 @@ export const Product: React.FC = () => {
 
     try {
       const titles = await generateTitles(keywords, category);
-      setOutputs(titles);
-
-      addTask('title', keywords, category);
-      const latestTask = tasks[0];
-      if (latestTask) {
-        const taskOutputs = titles.map((content, index) => ({
-          content,
-          version: `版本${index + 1}`,
-          sensitiveWords: [],
-          isMarked: false,
-          markStatus: 'pending' as const,
-        }));
-        setTaskOutputs(latestTask.id, taskOutputs);
-      }
+      
+      const taskOutputs: Output[] = titles.map((content, index) => ({
+        content,
+        version: `版本${index + 1}`,
+        sensitiveWords: [],
+        isMarked: false,
+        markStatus: 'pending',
+      }));
+      
+      setOutputs(taskOutputs);
+      const taskId = addTask('title', keywords, taskOutputs, category);
+      setCurrentTaskId(taskId);
 
       if (titles[0]) {
         const result = validateSensitive(titles[0]);
@@ -82,20 +81,18 @@ export const Product: React.FC = () => {
 
     try {
       const rewritten = await rewriteSellingPoints(sellingPoint);
-      setOutputs(rewritten);
-
-      addTask('selling_point', sellingPoint);
-      const latestTask = tasks[0];
-      if (latestTask) {
-        const taskOutputs = rewritten.map((content, index) => ({
-          content,
-          version: `风格${index + 1}`,
-          sensitiveWords: [],
-          isMarked: false,
-          markStatus: 'pending' as const,
-        }));
-        setTaskOutputs(latestTask.id, taskOutputs);
-      }
+      
+      const taskOutputs: Output[] = rewritten.map((content, index) => ({
+        content,
+        version: `风格${index + 1}`,
+        sensitiveWords: [],
+        isMarked: false,
+        markStatus: 'pending',
+      }));
+      
+      setOutputs(taskOutputs);
+      const taskId = addTask('selling_point', sellingPoint, taskOutputs);
+      setCurrentTaskId(taskId);
 
       if (rewritten[0]) {
         const result = validateSensitive(rewritten[0]);
@@ -113,15 +110,29 @@ export const Product: React.FC = () => {
 
   const handleSelectOutput = (index: number) => {
     setSelectedIndex(index);
-    if (outputs[index]) {
-      const result = validateSensitive(outputs[index]);
+    const output = outputs[index];
+    if (output) {
+      const result = validateSensitive(output.content);
       setSensitiveResult(result);
+    }
+  };
+
+  const handleMarkOutput = (index: number, status: 'available' | 'rejected') => {
+    if (currentTaskId) {
+      markOutput(currentTaskId, index, status);
+      const updatedOutputs = [...outputs];
+      updatedOutputs[index] = {
+        ...updatedOutputs[index],
+        isMarked: status === 'available',
+        markStatus: status,
+      };
+      setOutputs(updatedOutputs);
     }
   };
 
   const handleCopySelected = () => {
     if (selectedIndex >= 0 && outputs[selectedIndex]) {
-      navigator.clipboard.writeText(outputs[selectedIndex]);
+      navigator.clipboard.writeText(outputs[selectedIndex].content);
     }
   };
 
@@ -130,7 +141,7 @@ export const Product: React.FC = () => {
       addTemplate({
         name: `模板-${Date.now()}`,
         type: activeTab === 'title' ? 'title' : 'selling_point',
-        content: outputs[selectedIndex],
+        content: outputs[selectedIndex].content,
         tags: [category],
         usageCount: 0,
       });
@@ -287,11 +298,42 @@ export const Product: React.FC = () => {
                     <Tag variant={selectedIndex === index ? 'primary' : 'default'}>
                       {activeTab === 'title' ? `标题 ${index + 1}` : `风格 ${index + 1}`}
                     </Tag>
-                    {selectedIndex === index && (
-                      <Check className="w-5 h-5 text-primary-600" />
-                    )}
+                    <div className="flex items-center gap-1">
+                      {selectedIndex === index && (
+                        <Check className="w-5 h-5 text-primary-600" />
+                      )}
+                      {output.isMarked && (
+                        <Tag variant="success" size="sm">已采纳</Tag>
+                      )}
+                    </div>
                   </div>
-                  <p className="text-gray-900 whitespace-pre-wrap">{output}</p>
+                  <p className="text-gray-900 whitespace-pre-wrap mb-3">{output.content}</p>
+                  <div className="flex gap-2">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleMarkOutput(index, 'available');
+                      }}
+                      className={output.markStatus === 'available' ? 'bg-success-100 text-success-700' : ''}
+                    >
+                      <ThumbsUp className="w-4 h-4" />
+                      可用
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleMarkOutput(index, 'rejected');
+                      }}
+                      className={output.markStatus === 'rejected' ? 'bg-danger-100 text-danger-700' : ''}
+                    >
+                      <ThumbsDown className="w-4 h-4" />
+                      不可用
+                    </Button>
+                  </div>
                 </CardBody>
               </Card>
             ))}

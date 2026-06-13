@@ -28,7 +28,7 @@ export const Service: React.FC = () => {
   const [hasGenerated, setHasGenerated] = useState(false);
   const [sensitiveResult, setSensitiveResult] = useState<any>(null);
 
-  const { addTask, setTaskOutputs, tasks } = useTaskStore();
+  const { addTask } = useTaskStore();
   const { recordUsage } = useStatsStore();
   const { addTemplate } = useUserStore();
 
@@ -44,18 +44,14 @@ export const Service: React.FC = () => {
       const generatedReplies = await generateReviewReply(reviewText, selectedTone);
       setReplies(generatedReplies);
 
-      addTask('review_reply', reviewText);
-      const latestTask = tasks[0];
-      if (latestTask) {
-        const taskOutputs = generatedReplies.map((content, index) => ({
-          content,
-          version: `方案${index + 1}`,
-          sensitiveWords: [],
-          isMarked: false,
-          markStatus: 'pending' as const,
-        }));
-        setTaskOutputs(latestTask.id, taskOutputs);
-      }
+      const taskOutputs = generatedReplies.map((content, index) => ({
+        content,
+        version: `方案${index + 1}`,
+        sensitiveWords: [],
+        isMarked: false,
+        markStatus: 'pending' as const,
+      }));
+      addTask('review_reply', reviewText, taskOutputs);
 
       if (generatedReplies[0]) {
         const result = validateSensitive(generatedReplies[0]);

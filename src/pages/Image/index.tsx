@@ -1,21 +1,21 @@
 import React, { useState, useCallback } from 'react';
 import { useDropzone } from 'react-dropzone';
-import { Image, Upload, Sparkles, Copy, Check, Loader2 } from 'lucide-react';
+import { Image, Upload, Sparkles, Copy, Check, TrendingUp, DollarSign, Tag, ShoppingBag } from 'lucide-react';
 import { Card, CardBody } from '../../components/common/Card';
 import { Button } from '../../components/common/Button';
-import { Tag } from '../../components/common/Tag';
-import { Spinner } from '../../components/common/Spinner';
 import { useTaskStore } from '../../stores/taskStore';
 import { useStatsStore } from '../../stores/statsStore';
-import { processImageText } from '../../services/aiService';
+import { processImageText, extractCompetitorInfo } from '../../services/aiService';
+import { Output, CompetitorInfo } from '../../types';
 
 export const ImagePage: React.FC = () => {
   const [uploadedImage, setUploadedImage] = useState<string | null>(null);
   const [extractedTexts, setExtractedTexts] = useState<string[]>([]);
+  const [competitorInfo, setCompetitorInfo] = useState<CompetitorInfo | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [hasProcessed, setHasProcessed] = useState(false);
 
-  const { addTask, setTaskOutputs, tasks } = useTaskStore();
+  const { addTask } = useTaskStore();
   const { recordUsage } = useStatsStore();
 
   const onDrop = useCallback((acceptedFiles: File[]) => {
@@ -26,6 +26,7 @@ export const ImagePage: React.FC = () => {
         setUploadedImage(e.target?.result as string);
         setHasProcessed(false);
         setExtractedTexts([]);
+        setCompetitorInfo(null);
       };
       reader.readAsDataURL(file);
     }
@@ -49,23 +50,31 @@ export const ImagePage: React.FC = () => {
       const texts = await processImageText(uploadedImage);
       setExtractedTexts(texts);
 
-      addTask('image_analysis', '图片文字提取');
-      const latestTask = tasks[0];
-      if (latestTask) {
-        const taskOutputs = texts.map((content, index) => ({
+      const competitorData = await extractCompetitorInfo(texts.join('\n'));
+      setCompetitorInfo(competitorData);
+
+      const taskOutputs: Output[] = [
+        {
+          content: `竞品名称: ${competitorData.name}\n价格: ${competitorData.price}\n卖点: ${competitorData.sellingPoints.join('、')}\n营销玩法: ${competitorData.marketingStrategies.join('、')}`,
+          version: '竞品分析',
+          sensitiveWords: [],
+          isMarked: false,
+          markStatus: 'pending',
+        },
+        ...texts.map((content, index) => ({
           content,
           version: `文本${index + 1}`,
           sensitiveWords: [],
           isMarked: false,
           markStatus: 'pending' as const,
-        }));
-        setTaskOutputs(latestTask.id, taskOutputs);
-      }
+        })),
+      ];
 
-      recordUsage('image_analysis', true);
+      addTask('competitor_analysis', '竞品分析', taskOutputs);
+      recordUsage('competitor_analysis', true);
     } catch (error) {
       console.error('Failed to process image:', error);
-      recordUsage('image_analysis', false);
+      recordUsage('competitor_analysis', false);
     } finally {
       setIsProcessing(false);
     }
@@ -82,8 +91,8 @@ export const ImagePage: React.FC = () => {
         <p className="text-gray-600 mt-1">竞品分析、卖点提取、文字识别</p>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <Card>
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <Card className="lg:col-span-1">
           <CardBody className="p-6">
             <h3 className="font-bold text-gray-900 mb-4">上传图片</h3>
 
@@ -121,13 +130,14 @@ export const ImagePage: React.FC = () => {
                     leftIcon={<Sparkles className="w-4 h-4" />}
                     className="flex-1"
                   >
-                    提取文字
+                    分析竞品
                   </Button>
                   <Button
                     variant="ghost"
                     onClick={() => {
                       setUploadedImage(null);
                       setExtractedTexts([]);
+                      setCompetitorInfo(null);
                       setHasProcessed(false);
                     }}
                   >
@@ -139,10 +149,10 @@ export const ImagePage: React.FC = () => {
           </CardBody>
         </Card>
 
-        <Card>
+        <Card className="lg:col-span-2">
           <CardBody className="p-6">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="font-bold text-gray-900">提取结果</h3>
+            <div className="flex items-center justify-between mb-6">
+              <h3 className="font-bold text-gray-900">竞品分析结果</h3>
               {extractedTexts.length > 0 && (
                 <Button
                   variant="ghost"
@@ -157,28 +167,102 @@ export const ImagePage: React.FC = () => {
 
             {isProcessing && (
               <div className="flex items-center justify-center py-12">
-                <Spinner size="lg" />
+                <div className="text-center">
+                  <Sparkles className="w-12 h-12 text-primary-500 animate-spin mx-auto mb-4" />
+                  <p className="text-gray-600">正在分析图片...</p>
+                </div>
+              </div>
+            )}
+
+            {!isProcessing && competitorInfo && (
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                <div className="p-4 bg-gradient-to-br from-blue-50 to-indigo-50 rounded-xl">
+                  <div className="flex items-center gap-2 mb-2">
+                    <ShoppingBag className="w-5 h-5 text-blue-600" />
+                    <span className="text-sm font-medium text-gray-600">竞品名称</span>
+                  </div>
+                  <p className="text-xl font-bold text-gray-900">{competitorInfo.name}</p>
+                </div>
+
+                <div className="p-4 bg-gradient-to-br from-green-50 to-emerald-50 rounded-xl">
+                  <div className="flex items-center gap-2 mb-2">
+                    <DollarSign className="w-5 h-5 text-green-600" />
+                    <span className="text-sm font-medium text-gray-600">定价</span>
+                  </div>
+                  <p className="text-xl font-bold text-gray-900">{competitorInfo.price}</p>
+                </div>
+
+                <div className="p-4 bg-gradient-to-br from-purple-50 to-violet-50 rounded-xl">
+                  <div className="flex items-center gap-2 mb-2">
+                    <TrendingUp className="w-5 h-5 text-purple-600" />
+                    <span className="text-sm font-medium text-gray-600">营销活动数</span>
+                  </div>
+                  <p className="text-xl font-bold text-gray-900">{competitorInfo.marketingStrategies.length}个</p>
+                </div>
+              </div>
+            )}
+
+            {!isProcessing && competitorInfo && (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+                <div className="p-4 bg-gray-50 rounded-xl">
+                  <div className="flex items-center gap-2 mb-3">
+                    <Tag className="w-5 h-5 text-primary-600" />
+                    <span className="font-semibold text-gray-900">核心卖点</span>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {competitorInfo.sellingPoints.map((point, index) => (
+                      <span
+                        key={index}
+                        className="px-3 py-1.5 bg-white border border-gray-200 rounded-full text-sm text-gray-700"
+                      >
+                        {point}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="p-4 bg-gray-50 rounded-xl">
+                  <div className="flex items-center gap-2 mb-3">
+                    <Sparkles className="w-5 h-5 text-orange-600" />
+                    <span className="font-semibold text-gray-900">营销玩法</span>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {competitorInfo.marketingStrategies.map((strategy, index) => (
+                      <span
+                        key={index}
+                        className="px-3 py-1.5 bg-white border border-gray-200 rounded-full text-sm text-gray-700"
+                      >
+                        {strategy}
+                      </span>
+                    ))}
+                  </div>
+                </div>
               </div>
             )}
 
             {!isProcessing && extractedTexts.length > 0 && (
-              <div className="space-y-3">
-                {extractedTexts.map((text, index) => (
-                  <div
-                    key={index}
-                    className="p-4 bg-gray-50 rounded-xl flex items-start gap-3"
-                  >
-                    <Tag variant="primary">{index + 1}</Tag>
-                    <p className="text-gray-900 flex-1">{text}</p>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => navigator.clipboard.writeText(text)}
+              <div>
+                <h4 className="font-semibold text-gray-900 mb-3">提取的文字内容</h4>
+                <div className="space-y-3">
+                  {extractedTexts.map((text, index) => (
+                    <div
+                      key={index}
+                      className="p-4 bg-gray-50 rounded-xl flex items-start gap-3"
                     >
-                      <Copy className="w-4 h-4" />
-                    </Button>
-                  </div>
-                ))}
+                      <span className="w-6 h-6 bg-primary-100 text-primary-600 rounded-lg flex items-center justify-center text-sm font-bold">
+                        {index + 1}
+                      </span>
+                      <p className="text-gray-900 flex-1">{text}</p>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => navigator.clipboard.writeText(text)}
+                      >
+                        <Copy className="w-4 h-4" />
+                      </Button>
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
 
@@ -186,14 +270,14 @@ export const ImagePage: React.FC = () => {
               <div className="text-center py-12">
                 <Image className="w-12 h-12 text-gray-300 mx-auto mb-4" />
                 <p className="text-gray-500">
-                  上传图片后，系统将自动提取图片中的文字信息
+                  上传图片后，系统将自动分析竞品信息和提取文字
                 </p>
               </div>
             )}
 
             {!isProcessing && extractedTexts.length === 0 && hasProcessed && (
               <div className="text-center py-12">
-                <p className="text-gray-500">未能从图片中提取到文字信息</p>
+                <p className="text-gray-500">未能从图片中提取到信息</p>
               </div>
             )}
           </CardBody>
@@ -209,11 +293,11 @@ export const ImagePage: React.FC = () => {
             <div>
               <h3 className="font-bold text-gray-900 mb-2">图片处理功能说明</h3>
               <div className="text-sm text-gray-700 space-y-2">
+                <p>• <strong>竞品分析</strong>：上传竞品图片，自动识别价格、卖点和营销玩法</p>
                 <p>• <strong>文字提取</strong>：自动识别图片中的文字内容</p>
                 <p>• <strong>卖点提取</strong>：从商品主图中识别核心卖点信息</p>
-                <p>• <strong>竞品分析</strong>：上传竞品图片，提取关键营销信息</p>
                 <p className="text-gray-500 mt-2">
-                  提示：上传商品主图或竞品宣传图效果更佳
+                  提示：上传竞品商品主图或宣传图效果更佳
                 </p>
               </div>
             </div>
